@@ -1,0 +1,23 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      PORT: "8080"
+      JWT_SECRET: "development-secret"
+      CORS_ALLOWED_ORIGINS: "http://localhost:8081,http://localhost:8082"
+    ports:
+      - "8080:8080"
+
+  swagger:
+    image: swaggerapi/swagger-ui:v5.18.2
+    depends_on:
+      - api
+    environment:
+      SWAGGER_JSON: /openapi.yaml
+      URL: /openapi.yaml
+    volumes:
+      - ./docs/openapi.yaml:/openapi.yaml:ro
+    ports:
+      - "8082:8080"

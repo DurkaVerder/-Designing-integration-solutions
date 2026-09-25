@@ -1,0 +1,294 @@
+openapi: 3.0.3
+info:
+  title: TodoList API
+  version: 2.0.0
+  description: REST API для регистрации пользователей, JWT-аутентификации и управления личными задачами.
+servers:
+  - url: http://localhost:8080
+    description: Локальный сервер
+tags:
+  - name: Service
+    description: Состояние сервиса
+  - name: Authentication
+    description: Регистрация и вход пользователя
+  - name: Users
+    description: Управление профилем пользователя
+  - name: Tasks
+    description: CRUD-операции с задачами
+paths:
+  /health:
+    get:
+      tags: [Service]
+      summary: Проверить состояние API
+      responses:
+        '200':
+          description: Сервис работает
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/HealthResponse'}
+              example: {status: ok}
+  /api/{version}/auth/register:
+    parameters: [{$ref: '#/components/parameters/Version'}]
+    post:
+      tags: [Authentication]
+      summary: Зарегистрировать пользователя
+      description: Создаёт пользователя. Пароль принимается во входе, но не возвращается в ответе.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UserInput'}
+            example: {username: ivan, email: ivan@example.com, password: secret123}
+      responses:
+        '201':
+          description: Пользователь создан
+          content: {application/json: {schema: {$ref: '#/components/schemas/User'}, example: {id: usr-001, username: ivan, email: ivan@example.com}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '409':
+          description: Email уже зарегистрирован
+          content: {application/json: {schema: {$ref: '#/components/schemas/Error'}, example: {error: email already exists}}}
+  /api/{version}/auth/login:
+    parameters: [{$ref: '#/components/parameters/Version'}]
+    post:
+      tags: [Authentication]
+      summary: Выполнить вход
+      description: Проверяет email и пароль и возвращает JWT для защищённых запросов.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LoginInput'}
+            example: {email: ivan@example.com, password: secret123}
+      responses:
+        '200':
+          description: Вход выполнен, токен выдан
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LoginResponse'}
+              example: {user: {id: usr-001, username: ivan, email: ivan@example.com}, token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401':
+          description: Неверные учётные данные
+          content: {application/json: {schema: {$ref: '#/components/schemas/Error'}, example: {error: invalid credentials}}}
+  /api/{version}/users/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Version'}
+      - {$ref: '#/components/parameters/UserId'}
+    get:
+      tags: [Users]
+      security: [{bearerAuth: []}]
+      summary: Получить пользователя
+      description: Возвращает профиль пользователя по идентификатору.
+      responses:
+        '200':
+          description: Профиль пользователя
+          content: {application/json: {schema: {$ref: '#/components/schemas/User'}, example: {id: usr-001, username: ivan, email: ivan@example.com}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    put:
+      tags: [Users]
+      security: [{bearerAuth: []}]
+      summary: Обновить пользователя
+      description: Полностью обновляет имя, email и пароль пользователя.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UserInput'}
+            example: {username: ivan-petrov, email: ivan.petrov@example.com, password: newsecret123}
+      responses:
+        '200':
+          description: Пользователь обновлён
+          content: {application/json: {schema: {$ref: '#/components/schemas/User'}, example: {id: usr-001, username: ivan-petrov, email: ivan.petrov@example.com}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    delete:
+      tags: [Users]
+      security: [{bearerAuth: []}]
+      summary: Удалить пользователя
+      description: Удаляет пользователя по идентификатору.
+      responses:
+        '204': {description: 'Пользователь удалён; тело ответа отсутствует'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/{version}/tasks:
+    parameters: [{$ref: '#/components/parameters/Version'}]
+    get:
+      tags: [Tasks]
+      security: [{bearerAuth: []}]
+      summary: Получить список задач
+      description: Возвращает только задачи текущего пользователя. В v2 доступно поле priority.
+      responses:
+        '200':
+          description: Список задач
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TaskList'}
+              example: [{id: task-001, title: Подготовить отчёт, description: Финальная проверка, status: in_progress, priority: high, created_user_id: usr-001}]
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+    post:
+      tags: [Tasks]
+      security: [{bearerAuth: []}]
+      summary: Создать задачу
+      description: Создаёт задачу текущего пользователя. Для защиты от дублей можно передать Idempotency-Key.
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TaskInputV2'}
+            example: {title: Подготовить отчёт, description: Финальная проверка, status: new, priority: high}
+      responses:
+        '201':
+          description: Задача создана
+          content: {application/json: {schema: {$ref: '#/components/schemas/Task'}, example: {id: task-001, title: Подготовить отчёт, description: Финальная проверка, status: new, priority: high, created_user_id: usr-001}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /api/{version}/tasks/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Version'}
+      - {$ref: '#/components/parameters/TaskId'}
+    get:
+      tags: [Tasks]
+      security: [{bearerAuth: []}]
+      summary: Получить задачу
+      description: Возвращает задачу текущего пользователя.
+      responses:
+        '200':
+          description: Задача найдена
+          content: {application/json: {schema: {$ref: '#/components/schemas/Task'}, example: {id: task-001, title: Подготовить отчёт, description: Финальная проверка, status: in_progress, priority: high, created_user_id: usr-001}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    put:
+      tags: [Tasks]
+      security: [{bearerAuth: []}]
+      summary: Обновить задачу
+      description: Заменяет данные задачи текущего пользователя.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TaskInputV2'}
+            example: {title: Подготовить отчёт, description: Отправить до пятницы, status: done, priority: high}
+      responses:
+        '200':
+          description: Задача обновлена
+          content: {application/json: {schema: {$ref: '#/components/schemas/Task'}, example: {id: task-001, title: Подготовить отчёт, description: Отправить до пятницы, status: done, priority: high, created_user_id: usr-001}}}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    delete:
+      tags: [Tasks]
+      security: [{bearerAuth: []}]
+      summary: Удалить задачу
+      description: Удаляет задачу текущего пользователя.
+      responses:
+        '204': {description: 'Задача удалена; тело ответа отсутствует'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
+  parameters:
+    Version:
+      name: version
+      in: path
+      required: true
+      description: Версия API. Используйте v1 или v2.
+      schema: {type: string, enum: [v1, v2]}
+    UserId:
+      name: id
+      in: path
+      required: true
+      description: Идентификатор пользователя
+      schema: {type: string, example: usr-001}
+    TaskId:
+      name: id
+      in: path
+      required: true
+      description: Идентификатор задачи
+      schema: {type: string, example: task-001}
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Уникальный ключ запроса для предотвращения создания дублей.
+      schema: {type: string, minLength: 1, example: 7f4c2d8e-6d4c-4a35-9a6f-123456789abc}
+  schemas:
+    UserInput:
+      type: object
+      required: [username, email, password]
+      properties:
+        username: {type: string, description: Отображаемое имя, example: ivan}
+        email: {type: string, format: email, example: ivan@example.com}
+        password: {type: string, format: password, minLength: 6, example: secret123}
+    LoginInput:
+      type: object
+      required: [email, password]
+      properties:
+        email: {type: string, format: email, example: ivan@example.com}
+        password: {type: string, format: password, example: secret123}
+    User:
+      type: object
+      required: [id, username, email]
+      properties:
+        id: {type: string, example: usr-001}
+        username: {type: string, example: ivan}
+        email: {type: string, format: email, example: ivan@example.com}
+    LoginResponse:
+      type: object
+      required: [user, token]
+      properties:
+        user: {$ref: '#/components/schemas/User'}
+        token: {type: string, description: JWT-токен для заголовка Authorization}
+    TaskInput:
+      type: object
+      required: [title]
+      properties:
+        title: {type: string, description: Заголовок задачи, example: Подготовить отчёт}
+        description: {type: string, description: Подробное описание, example: Финальная проверка}
+        status: {type: string, enum: [new, in_progress, done], default: new, example: new}
+    TaskInputV2:
+      allOf:
+        - {$ref: '#/components/schemas/TaskInput'}
+        - type: object
+          properties:
+            priority: {type: string, enum: [low, medium, high], default: medium, example: high}
+    Task:
+      allOf:
+        - {$ref: '#/components/schemas/TaskInputV2'}
+        - type: object
+          required: [id, created_user_id]
+          properties:
+            id: {type: string, example: task-001}
+            created_user_id: {type: string, example: usr-001}
+    TaskList:
+      type: array
+      items: {$ref: '#/components/schemas/Task'}
+    HealthResponse:
+      type: object
+      properties:
+        status: {type: string, example: ok}
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: {type: string, example: invalid request}
+  responses:
+    InvalidRequest:
+      description: Некорректное тело запроса
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}, example: {error: invalid request}}}
+    Unauthorized:
+      description: Требуется корректный JWT
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}, example: {error: authentication required}}}
+    NotFound:
+      description: Ресурс не найден
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}, example: {error: task not found}}}
+    RateLimited:
+      description: Превышен лимит 60 запросов в минуту
+      headers:
+        Retry-After: {description: Секунды до следующей попытки, schema: {type: integer}}
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}, example: {error: rate limit exceeded}}}

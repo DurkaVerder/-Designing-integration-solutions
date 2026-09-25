@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TodoList</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section id="auth-view" class="panel auth-panel">
+        <div class="brand">
+          <span class="brand-mark">✓</span>
+          <div>
+            <p class="eyebrow">TodoList API</p>
+            <h1>Ваши задачи</h1>
+          </div>
+        </div>
+
+        <div class="tabs" role="tablist">
+          <button class="tab is-active" data-auth-tab="login" type="button">Войти</button>
+          <button class="tab" data-auth-tab="register" type="button">Регистрация</button>
+        </div>
+
+        <p id="auth-message" class="message" role="alert"></p>
+
+        <form id="login-form" class="form">
+          <label>
+            Email
+            <input name="email" type="email" autocomplete="email" required />
+          </label>
+          <label>
+            Пароль
+            <input name="password" type="password" autocomplete="current-password" required />
+          </label>
+          <button class="button button-primary" type="submit">Войти</button>
+        </form>
+
+        <form id="register-form" class="form is-hidden">
+          <label>
+            Имя пользователя
+            <input name="username" type="text" autocomplete="username" required />
+          </label>
+          <label>
+            Email
+            <input name="email" type="email" autocomplete="email" required />
+          </label>
+          <label>
+            Пароль
+            <input name="password" type="password" minlength="6" autocomplete="new-password" required />
+          </label>
+          <button class="button button-primary" type="submit">Создать аккаунт</button>
+        </form>
+      </section>
+
+      <section id="tasks-view" class="is-hidden">
+        <header class="topbar">
+          <div class="brand">
+            <span class="brand-mark">✓</span>
+            <div>
+              <p class="eyebrow">TodoList</p>
+              <h1 id="welcome-title">Мои задачи</h1>
+            </div>
+          </div>
+          <button id="logout-button" class="button button-ghost" type="button">Выйти</button>
+        </header>
+
+        <div class="content-grid">
+          <section class="panel task-form-panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Новая задача</p>
+                <h2 id="form-title">Добавить задачу</h2>
+              </div>
+              <button id="cancel-edit" class="button button-ghost is-hidden" type="button">Отмена</button>
+            </div>
+            <p id="task-message" class="message" role="alert"></p>
+            <form id="task-form" class="form">
+              <label>
+                Название
+                <input name="title" type="text" maxlength="120" required />
+              </label>
+              <label>
+                Описание
+                <textarea name="description" rows="4" maxlength="500"></textarea>
+              </label>
+              <div class="form-row">
+                <label>
+                  Статус
+                  <select name="status">
+                    <option value="new">Новая</option>
+                    <option value="in_progress">В работе</option>
+                    <option value="done">Готово</option>
+                  </select>
+                </label>
+                <label>
+                  Приоритет
+                  <select name="priority">
+                    <option value="low">Низкий</option>
+                    <option value="medium" selected>Средний</option>
+                    <option value="high">Высокий</option>
+                  </select>
+                </label>
+              </div>
+              <button id="save-task" class="button button-primary" type="submit">Добавить задачу</button>
+            </form>
+          </section>
+
+          <section class="panel list-panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Ваш список</p>
+                <h2>Задачи</h2>
+              </div>
+              <button id="refresh-button" class="button button-ghost" type="button">Обновить</button>
+            </div>
+            <div id="tasks-list" class="tasks-list">
+              <p class="empty-state">Загрузка задач...</p>
+            </div>
+          </section>
+        </div>
+      </section>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>

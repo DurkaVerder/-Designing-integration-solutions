@@ -18,22 +18,27 @@ func main() {
 	action := flag.String("action", "", "RPC action")
 	data := flag.String("data", "{}", "JSON data")
 	auth := flag.String("auth", "development-api-key", "API key")
+	token := flag.String("token", "", "JWT token for user-scoped RPC actions")
+	requestIDFlag := flag.String("id", "", "request ID; use the same value to test idempotency")
 	timeout := flag.Duration("timeout", 10*time.Second, "response timeout")
 	flag.Parse()
 
 	if *action == "" {
-		log.Fatal("-action is required: create_user, get_user, update_user or delete_user")
+		log.Fatal("-action is required: login_user, create_user, get_user, update_user or delete_user")
 	}
 
-	client, err := rabbitmq.NewClient(rabbitmq.DefaultConfig(*url))
+	client, err := rabbitmq.NewClientWithRetry(context.Background(), rabbitmq.DefaultConfig(*url), 30, time.Second)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer client.Close()
 
-	requestID, err := newRequestID()
-	if err != nil {
-		log.Fatal(err)
+	requestID := *requestIDFlag
+	if requestID == "" {
+		requestID, err = newRequestID()
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
@@ -44,6 +49,7 @@ func main() {
 		Action:  *action,
 		Data:    []byte(*data),
 		Auth:    *auth,
+		Token:   *token,
 	})
 	if err != nil {
 		log.Fatal(err)

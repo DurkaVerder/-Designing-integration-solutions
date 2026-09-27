@@ -56,6 +56,28 @@ func NewClient(config Config) (*Client, error) {
 	return client, nil
 }
 
+func NewClientWithRetry(ctx context.Context, config Config, attempts int, delay time.Duration) (*Client, error) {
+	var lastErr error
+	for attempt := 0; attempt < attempts; attempt++ {
+		client, err := NewClient(config)
+		if err == nil {
+			return client, nil
+		}
+		lastErr = err
+		if attempt == attempts-1 {
+			break
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return nil, fmt.Errorf("connect to RabbitMQ after %d attempts: %w", attempts, lastErr)
+}
+
 func (c *Client) declareTopology() error {
 	channel, err := c.connection.Channel()
 	if err != nil {

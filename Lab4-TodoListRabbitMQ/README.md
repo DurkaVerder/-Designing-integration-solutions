@@ -230,12 +230,17 @@ RPC client <- api.responses <- RPC server
 }
 ```
 
-Поддерживаются действия `create_user`, `get_user`, `update_user`, `delete_user`,
+Поддерживаются действия `login_user`, `create_user`, `get_user`, `update_user`, `delete_user`,
 `create_task`, `get_task`, `get_tasks`, `update_task` и `delete_task`. Поле `auth`
 проверяется сервером по переменной `RABBITMQ_API_KEY`. Для лабораторной выбран
 API-ключ: он проще JWT для machine-to-machine вызовов, не требует состояния
 сессии и подходит для доверенной внутренней очереди. В production ключ следует
 хранить в Secret Manager, ротировать и передавать RabbitMQ через TLS.
+
+Для `get_tasks` дополнительно используется JWT пользователя. Клиент передаёт
+токен в поле `token`, а сервер извлекает `user_id` из claims, поэтому передавать
+`user_id` в `data` не требуется. API-ключ отвечает за доступ RPC-клиента к
+сервису, JWT отвечает за идентификацию пользователя.
 
 Идентификатор запроса является ключом идемпотентности. Сервер сохраняет ответ в
 in-memory map и при повторном `id` возвращает тот же ответ без повторного вызова

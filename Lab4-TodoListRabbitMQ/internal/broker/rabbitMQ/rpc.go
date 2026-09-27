@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"TodoList/internal/entity"
+	jwtpkg "TodoList/pkg/jwt"
 
 	"github.com/rabbitmq/amqp091-go"
 )
@@ -27,6 +28,7 @@ type RPCRequest struct {
 	Action  string          `json:"action"`
 	Data    json.RawMessage `json:"data"`
 	Auth    string          `json:"auth"`
+	Token   string          `json:"token,omitempty"`
 }
 
 type RPCResponse struct {
@@ -41,6 +43,7 @@ type RPCUserService interface {
 	CreateUser(entity.User) (entity.User, error)
 	UpdateUser(entity.User) (entity.User, error)
 	DeleteUser(string) error
+	LoginUser(string, string) (entity.User, string, error)
 }
 
 type RPCTaskService interface {
@@ -49,6 +52,18 @@ type RPCTaskService interface {
 	CreateTask(entity.Task) (entity.Task, error)
 	UpdateTask(entity.Task) (entity.Task, error)
 	DeleteTask(string) error
+}
+
+type rpcUserInput struct {
+	ID       string `json:"id"`
+	Username string `json:"username"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+type rpcLoginInput struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
 }
 
 func (c *Client) declareRPCTopology() error {
@@ -141,13 +156,14 @@ type RPCServer struct {
 	client       *Client
 	users        RPCUserService
 	tasks        RPCTaskService
+	jwtManager   *jwtpkg.Manager
 	expectedAuth string
 	mu           sync.Mutex
 	processed    map[string]RPCResponse
 }
 
-func NewRPCServer(client *Client, users RPCUserService, tasks RPCTaskService, expectedAuth string) *RPCServer {
-	return &RPCServer{client: client, users: users, tasks: tasks, expectedAuth: expectedAuth, processed: make(map[string]RPCResponse)}
+func NewRPCServer(client *Client, users RPCUserService, tasks RPCTaskService, jwtManager *jwtpkg.Manager, expectedAuth string) *RPCServer {
+	return &RPCServer{client: client, users: users, tasks: tasks, jwtManager: jwtManager, expectedAuth: expectedAuth, processed: make(map[string]RPCResponse)}
 }
 
 func (s *RPCServer) Serve(ctx context.Context) error {
@@ -215,12 +231,25 @@ func (s *RPCServer) handle(request RPCRequest) (RPCResponse, bool) {
 		return response, true
 	}
 	switch request.Action {
+	case "login_user":
+		var input rpcLoginInput
+		if err := json.Unmarshal(request.Data, &input); err != nil || input.Email == "" || input.Password == "" {
+			response.Error = "email and password are required"
+			return response, true
+		}
+		user, token, err := s.users.LoginUser(input.Email, input.Password)
+		if err != nil {
+			response.Error = "invalid credentials"
+			return response, true
+		}
+		response.Status, response.Data, response.Error = "ok", map[string]any{"user": user, "token": token}, nil
 	case "create_user":
-		var user entity.User
-		if err := json.Unmarshal(request.Data, &user); err != nil {
+		var input rpcUserInput
+		if err := json.Unmarshal(request.Data, &input); err != nil || input.Username == "" || input.Email == "" || input.Password == "" {
 			response.Error = "invalid user data"
 			return response, true
 		}
+		user := entity.User{Username: input.Username, Email: input.Email, Password: input.Password}
 		created, err := s.users.CreateUser(user)
 		if err != nil {
 			response.Error = err.Error()
@@ -242,11 +271,12 @@ func (s *RPCServer) handle(request RPCRequest) (RPCResponse, bool) {
 		}
 		response.Status, response.Data, response.Error = "ok", user, nil
 	case "update_user":
-		var user entity.User
-		if err := json.Unmarshal(request.Data, &user); err != nil || user.ID == "" {
-			response.Error = "user id is required"
+		var input rpcUserInput
+		if err := json.Unmarshal(request.Data, &input); err != nil || input.ID == "" || input.Username == "" || input.Email == "" || input.Password == "" {
+			response.Error = "user id, username, email and password are required"
 			return response, true
 		}
+		user := entity.User{ID: input.ID, Username: input.Username, Email: input.Email, Password: input.Password}
 		updated, err := s.users.UpdateUser(user)
 		if err != nil {
 			response.Error = err.Error()
@@ -298,14 +328,32 @@ func (s *RPCServer) handle(request RPCRequest) (RPCResponse, bool) {
 			Offset int    `json:"offset"`
 			Limit  int    `json:"limit"`
 		}
-		if err := json.Unmarshal(request.Data, &data); err != nil || data.UserID == "" {
-			response.Error = "user_id is required"
+		if err := json.Unmarshal(request.Data, &data); err != nil {
+			response.Error = "invalid task list data"
+			return response, true
+		}
+		if s.jwtManager == nil {
+			response.Error = "jwt authentication is not configured"
+			return response, true
+		}
+		payload, err := s.jwtManager.GetPayload(request.Token)
+		if err != nil {
+			response.Error = "invalid jwt token"
+			return response, true
+		}
+		userID, ok := payload.Extra["user_id"].(string)
+		if !ok || userID == "" {
+			response.Error = "user id is missing in jwt"
+			return response, true
+		}
+		if data.UserID != "" && data.UserID != userID {
+			response.Error = "user id does not match jwt"
 			return response, true
 		}
 		if data.Limit <= 0 {
 			data.Limit = 10
 		}
-		tasks, err := s.tasks.GetTasks(data.UserID, data.Offset, data.Limit)
+		tasks, err := s.tasks.GetTasks(userID, data.Offset, data.Limit)
 		if err != nil {
 			response.Error = err.Error()
 			return response, isPermanentError(err)
@@ -427,7 +475,7 @@ func publishDeadLetter(channel *amqp091.Channel, delivery amqp091.Delivery, reas
 
 func isPermanentError(err error) bool {
 	message := err.Error()
-	return strings.Contains(message, "resource not found") || strings.Contains(message, "email already registered")
+	return strings.Contains(message, "resource not found") || strings.Contains(message, "email already registered") || strings.Contains(message, "invalid credentials")
 }
 
 func retryCount(headers amqp091.Table) int {

@@ -40,25 +40,44 @@ data=map[email:ivan@example.com id:1 username:ivan]
 error=<nil>
 ```
 
-## 4. Получение пользователя
+## 4. Авторизация пользователя через RabbitMQ
+
+Команда возвращает JWT в поле `token`:
+
+```bash
+go run ./cmd/rpc-client \
+	-action login_user \
+	-data '{"email":"alex@example.com","password":"secret123"}'
+```
+
+Скопируйте полученный JWT и используйте его для получения задач:
+
+```bash
+go run ./cmd/rpc-client \
+	-token "<JWT_TOKEN>" \
+	-action get_tasks \
+	-data '{"offset":0,"limit":10}'
+```
+
+## 5. Получение пользователя
 
 ```bash
 go run ./cmd/rpc-client -action get_user -data '{"id":"1"}'
 ```
 
-## 5. Изменение пользователя
+## 6. Изменение пользователя
 
 ```bash
 go run ./cmd/rpc-client -action update_user -data '{"id":"1","username":"petr","email":"petr@example.com","password":"secret123"}'
 ```
 
-## 6. Удаление пользователя
+## 7. Удаление пользователя
 
 ```bash
 go run ./cmd/rpc-client -action delete_user -data '{"id":"1"}'
 ```
 
-## 7. Параметры клиента
+## 8. Параметры клиента
 
 ```text
 -url      адрес RabbitMQ, по умолчанию amqp://guest:guest@localhost:5672/
@@ -67,7 +86,7 @@ go run ./cmd/rpc-client -action delete_user -data '{"id":"1"}'
 -timeout  время ожидания ответа, по умолчанию 10s
 ```
 
-## 8. Работа с задачами
+## 9. Работа с задачами
 
 В примерах ниже пользователь с идентификатором `1` должен существовать.
 
@@ -86,11 +105,11 @@ go run ./cmd/rpc-client -action get_task -data '{"id":"1"}'
 ### Получение списка задач пользователя
 
 ```bash
-go run ./cmd/rpc-client -action get_tasks -data '{"user_id":"1","offset":0,"limit":10}'
+go run ./cmd/rpc-client -token "<JWT_TOKEN>" -action get_tasks -data '{"offset":0,"limit":10}'
 ```
 
-Поля `offset` и `limit` необязательны. Если `limit` не указан, используется
-значение `10`.
+`user_id` указывать не нужно: сервер получает его из JWT. Поля `offset` и `limit`
+необязательны. Если `limit` не указан, используется значение `10`.
 
 ### Изменение задачи
 
@@ -108,6 +127,7 @@ go run ./cmd/rpc-client -action delete_task -data '{"id":"1"}'
 
 ```text
 create_user   создать пользователя
+login_user    авторизовать пользователя и получить JWT
 get_user      получить пользователя
 update_user   изменить пользователя
 delete_user   удалить пользователя
@@ -117,6 +137,55 @@ get_tasks     получить список задач пользователя
 update_task   изменить задачу
 delete_task   удалить задачу
 ```
+
+### Получение JWT для списка задач
+
+Сначала выполните вход через REST API и возьмите поле `token` из ответа:
+
+```bash
+curl -X POST "http://localhost:8080/api/v2/auth/login" \
+	-H "Content-Type: application/json" \
+	-d '{"email":"alex@example.com","password":"secret123"}'
+```
+
+Затем передайте токен в RPC-клиент:
+
+```bash
+go run ./cmd/rpc-client \
+	-token "<JWT_TOKEN>" \
+	-action get_tasks \
+	-data '{"offset":0,"limit":10}'
+```
+
+## 10. Проверка идемпотентности
+
+Для проверки нужно дважды отправить один и тот же запрос с одинаковым `-id`.
+Например:
+
+```bash
+go run ./cmd/rpc-client \
+	-id "11111111-1111-4111-8111-111111111111" \
+	-action create_user \
+	-data '{"username":"idempotent-user","email":"idempotent@example.com","password":"secret123"}'
+```
+
+Повторить абсолютно ту же команду:
+
+```bash
+go run ./cmd/rpc-client \
+	-id "11111111-1111-4111-8111-111111111111" \
+	-action create_user \
+	-data '{"username":"idempotent-user","email":"idempotent@example.com","password":"secret123"}'
+```
+
+Обе команды должны вернуть один и тот же `correlation_id` и один и тот же `id`
+пользователя. Вторая команда не создаёт нового пользователя: RPC-сервер находит
+`request.id` в `processed` и возвращает сохранённый ответ.
+
+Важно: если не указывать `-id`, клиент каждый раз создаёт новый UUID. Такие
+запросы считаются разными и не проверяют идемпотентность. Текущее хранилище
+`processed` находится в памяти и очищается после перезапуска API; для production
+его следует хранить в Redis или базе данных с уникальным индексом.
 
 Пример с явным API-ключом:
 
@@ -130,7 +199,7 @@ go run ./cmd/rpc-client -auth "development-api-key" -action get_user -data '{"id
 go run ./cmd/rpc-client -url "amqp://guest:guest@localhost:5672/" -action get_user -data '{"id":"1"}'
 ```
 
-## 9. Остановка контейнеров
+## 11. Остановка контейнеров
 
 ```bash
 docker compose down

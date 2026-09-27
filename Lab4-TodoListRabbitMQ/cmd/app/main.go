@@ -32,7 +32,7 @@ func main() {
 	var taskPublisher service.TaskEventPublisher
 	if url := os.Getenv("RABBITMQ_URL"); url != "" {
 		var rabbitErr error
-		broker, rabbitErr = rabbitmq.NewClient(rabbitmq.DefaultConfig(url))
+		broker, rabbitErr = rabbitmq.NewClientWithRetry(context.Background(), rabbitmq.DefaultConfig(url), 60, time.Second)
 		if rabbitErr != nil {
 			log.Printf("RabbitMQ disabled: %v", rabbitErr)
 		} else {
@@ -59,7 +59,7 @@ func main() {
 		if rpcAPIKey == "" {
 			rpcAPIKey = "development-api-key"
 		}
-		rpcServer := rabbitmq.NewRPCServer(broker, users, tasks, rpcAPIKey)
+		rpcServer := rabbitmq.NewRPCServer(broker, users, tasks, jwtManager, rpcAPIKey)
 		go func() {
 			if err := rpcServer.Serve(context.Background()); err != nil {
 				log.Printf("RabbitMQ RPC server stopped: %v", err)

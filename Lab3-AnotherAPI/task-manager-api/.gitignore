@@ -1,0 +1,27 @@
+# Виртуальное окружение
+.venv/
+venv/
+env/
+
+# Переменные окружения и секреты
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE
+.vscode/
+.idea/
+
+# Логи
+*.log
+
+# Временные файлы
+*.tmp
+*.temp
+
+# Системные файлы Windows
+Thumbs.db
+desktop.ini

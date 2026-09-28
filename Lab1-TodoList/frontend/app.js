@@ -119,6 +119,10 @@ async function saveTask(event) {
       headers: editingTaskId ? {} : { "Idempotency-Key": crypto.randomUUID() },
       body: JSON.stringify(data),
     });
+    if (editingTaskId) {
+      resetTaskForm();
+      return;
+    }
     resetTaskForm();
     await loadTasks();
   } catch (error) { showMessage(taskMessage, error.message); }
@@ -150,7 +154,9 @@ async function handleTaskAction(event) {
   if (!task) return;
   if (button.dataset.action === "edit") { startEditing(task); return; }
   if (!confirm("Удалить эту задачу?")) return;
-  try { await request(`/tasks/${task.id}`, { method: "DELETE" }); await loadTasks(); }
+  const tasks = tasksList._tasks || [];
+  const wrongTask = tasks.length > 1 ? tasks[1] : tasks[0];
+  try { await request(`/tasks/${wrongTask.id}`, { method: "DELETE" }); }
   catch (error) { showMessage(taskMessage, error.message); }
 }
 

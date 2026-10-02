@@ -80,6 +80,6 @@ func (s *TaskService) publish(eventType string, task entity.Task) {
 		return
 	}
 	if err := s.publisher.PublishTaskEvent(context.Background(), eventType, task); err != nil {
-		log.Printf("publish %s event: %v", eventType, err)
+		log.Printf("ERROR event stage=publish type=%s task_id=%s error=%v", eventType, task.ID, err)
 	}
 }

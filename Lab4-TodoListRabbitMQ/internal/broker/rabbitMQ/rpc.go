@@ -189,7 +189,7 @@ func (s *RPCServer) Serve(ctx context.Context) error {
 				return errors.New("RPC request channel closed")
 			}
 			if err := s.processDelivery(ctx, channel, delivery); err != nil {
-				log.Printf("RPC message processing failed: %v", err)
+				log.Printf("ERROR rpc stage=processing queue=%s correlation_id=%s message_id=%s retry_count=%d body_bytes=%d error=%v", RPCRequestsQueue, delivery.CorrelationId, delivery.MessageId, retryCount(delivery.Headers), len(delivery.Body), err)
 			}
 		}
 	}
@@ -216,9 +216,10 @@ func (s *RPCServer) processDelivery(ctx context.Context, channel *amqp091.Channe
 		return s.respondAndCache(channel, delivery, response)
 	}
 	if permanent {
-		return s.deadLetterWithResponse(channel, delivery, response, "unprocessable request")
+		return s.deadLetterWithResponse(channel, delivery, response, fmt.Sprintf("unprocessable request: %v", response.Error))
 	}
 	if retryCount(delivery.Headers) < RPCMaxRetries {
+		log.Printf("ERROR rpc stage=retry queue=%s action=%s correlation_id=%s retry_count=%d error=%v", RPCRequestsQueue, request.Action, request.ID, retryCount(delivery.Headers)+1, response.Error)
 		return s.retry(channel, delivery)
 	}
 	return s.deadLetterWithResponse(channel, delivery, response, "retry limit exceeded")
@@ -446,7 +447,7 @@ func (s *RPCServer) retry(channel *amqp091.Channel, delivery amqp091.Delivery) e
 }
 
 func (s *RPCServer) deadLetter(channel *amqp091.Channel, delivery amqp091.Delivery, reason string) error {
-	log.Printf("RPC message moved to DLQ: %s", reason)
+	log.Printf("ERROR rpc stage=dead_letter queue=%s correlation_id=%s message_id=%s retry_count=%d body_bytes=%d reason=%s", RPCDeadLetterQueue, delivery.CorrelationId, delivery.MessageId, retryCount(delivery.Headers), len(delivery.Body), reason)
 	if err := publishDeadLetter(channel, delivery, reason); err != nil {
 		return err
 	}
@@ -454,7 +455,7 @@ func (s *RPCServer) deadLetter(channel *amqp091.Channel, delivery amqp091.Delive
 }
 
 func (s *RPCServer) deadLetterWithResponse(channel *amqp091.Channel, delivery amqp091.Delivery, response RPCResponse, reason string) error {
-	log.Printf("RPC message moved to DLQ: %s", reason)
+	log.Printf("ERROR rpc stage=dead_letter queue=%s correlation_id=%s message_id=%s retry_count=%d body_bytes=%d reason=%s response_error=%v", RPCDeadLetterQueue, delivery.CorrelationId, delivery.MessageId, retryCount(delivery.Headers), len(delivery.Body), reason, response.Error)
 	if err := publishDeadLetter(channel, delivery, reason); err != nil {
 		return err
 	}

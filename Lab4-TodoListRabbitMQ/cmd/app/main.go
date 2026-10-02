@@ -10,21 +10,34 @@ import (
 	"TodoList/internal/service"
 	"TodoList/pkg/jwt"
 	"context"
+	"io"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
 func main() {
+	errorLogPath := os.Getenv("ERROR_LOG_FILE")
+	if errorLogPath == "" {
+		errorLogPath = "logs/errors.log"
+	}
+	errorLog, err := os.OpenFile(errorLogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		log.Fatalf("open error log: %v", err)
+	}
+	defer errorLog.Close()
+	log.SetOutput(io.MultiWriter(os.Stdout, errorLogWriter{destination: errorLog}))
+
 	secret := os.Getenv("JWT_SECRET")
 	if secret == "" {
 		secret = "development-secret"
 	}
 	jwtManager, err := jwt.NewManager(secret, 24*time.Hour, "todo-list")
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("ERROR jwt initialization: %v", err)
 	}
 	repo := inmemory.NewInMemoryRepository()
 	users := service.NewUserService(repo, *jwtManager)
@@ -34,7 +47,7 @@ func main() {
 		var rabbitErr error
 		broker, rabbitErr = rabbitmq.NewClientWithRetry(context.Background(), rabbitmq.DefaultConfig(url), 60, time.Second)
 		if rabbitErr != nil {
-			log.Printf("RabbitMQ disabled: %v", rabbitErr)
+			log.Printf("ERROR RabbitMQ disabled: %v", rabbitErr)
 		} else {
 			taskPublisher = broker
 			rpcAPIKey := os.Getenv("RABBITMQ_API_KEY")
@@ -47,7 +60,7 @@ func main() {
 					return nil
 				})
 				if err != nil {
-					log.Printf("RabbitMQ consumer stopped: %v", err)
+					log.Printf("ERROR RabbitMQ consumer stopped: %v", err)
 				}
 			}()
 			defer broker.Close()
@@ -62,7 +75,7 @@ func main() {
 		rpcServer := rabbitmq.NewRPCServer(broker, users, tasks, jwtManager, rpcAPIKey)
 		go func() {
 			if err := rpcServer.Serve(context.Background()); err != nil {
-				log.Printf("RabbitMQ RPC server stopped: %v", err)
+				log.Printf("ERROR RabbitMQ RPC server stopped: %v", err)
 			}
 		}()
 	}
@@ -119,5 +132,20 @@ func main() {
 		port = "8080"
 	}
 	log.Printf("TodoList API listening on :%s", port)
-	log.Fatal(r.Run(":" + port))
+	if err := r.Run(":" + port); err != nil {
+		log.Fatalf("ERROR HTTP server stopped: %v", err)
+	}
+}
+
+type errorLogWriter struct {
+	destination io.Writer
+}
+
+func (w errorLogWriter) Write(data []byte) (int, error) {
+	if strings.Contains(string(data), "ERROR ") {
+		if _, err := w.destination.Write(data); err != nil {
+			return 0, err
+		}
+	}
+	return len(data), nil
 }

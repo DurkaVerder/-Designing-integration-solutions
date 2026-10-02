@@ -2,6 +2,7 @@ package inmemory
 
 import (
 	"errors"
+	"sort"
 	"strconv"
 	"sync"
 
@@ -90,6 +91,11 @@ func (r *InMemoryRepository) GetTasks(userID string) ([]entity.Task, error) {
 			result = append(result, task)
 		}
 	}
+
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].ID > result[j].ID
+	})
+
 	return result, nil
 }
 func (r *InMemoryRepository) CreateTask(task entity.Task) (entity.Task, error) {
